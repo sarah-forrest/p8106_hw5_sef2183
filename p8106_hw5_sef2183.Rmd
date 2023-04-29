@@ -18,11 +18,17 @@ library(ISLR) # for the USArrests dataset
 
 # 1. Predicting gas milage using the auto dataset
 
-In this problem, we will apply support vector machines to predict whether a given car gets high or low gas mileage based on the dataset “auto.csv”. The dataset contains 392 observations. The response variable is `mpg_cat`, which indicates whether the miles per gallon of a car is high or low. The predictors are `cylinders`, `displacement`, `horsepower`, `weight`, `acceleration`, `year`, and `origin`. 
+In this problem, we will apply support vector machines to predict whether a given car gets high or low gas mileage based on the dataset “auto.csv”. The dataset contains 392 observations. The response variable is `mpg_cat`, which is a binary variable that indicates whether the miles per gallon of a car is high or low. The predictors are `cylinders`, `displacement`, `horsepower`, `weight`, `acceleration`, `year`, and `origin`. 
 
 ```{r}
 # read in data
 auto = read.csv("data/auto.csv") 
+```
+
+Set the `mpg_cat` variable to a factor.
+
+```{r}
+auto$mpg_cat <- factor(auto$mpg_cat, c("high", "low"))
 ```
 
 Create dummy variables for `origin` (1 = American, 2 = European, 3 = Japanese) so it will be treated as a character variable rather than a numeric variable. Two dummy variables are created: one for American cars (1 = American, 0 = otherwise) and one for European cars (1 = European, 0 = otherwise). Note that cars with Japanese origin have a value of 0 for both `origin_american` and `origin_european` dummy variables.
@@ -34,16 +40,6 @@ auto$origin_european <- ifelse(auto$origin == 2, 1, 0) # dummy variable for euro
 # remove original origin variable
 auto$origin <- NULL
 ```
- 
-Mutate the data so the outcome variable `mpg_cat` takes numeric values of 0 and 1 rather than character values "low" and "high"
-
-```{r}
-auto = 
-  auto %>%
-  mutate(mpg_cat = case_when(
-    mpg_cat == "low" ~ 0,
-    mpg_cat == "high" ~ 1))
-``` 
 
 Split the dataset into two parts: training data (70%) and test data (30%)
 
@@ -64,8 +60,29 @@ auto_test <- auto[-rowTrain, ]
 
 ## (a) Fit a support vector classifier (linear kernel) to the training data. 
 
+**Linear Boundary**
+
 ```{r}
-svm_model_lin <- svm(mpg_cat ~ ., data = auto_train, kernel = "linear")
+set.seed(1)
+
+# tuning parameter cost for linear boundary
+linear.tune <- tune.svm(mpg_cat ~ . ,
+                        data = auto_train,
+                        kernel = "linear",
+                        cost = exp(seq(-5,2,len = 50)), # specify a grid of cost parameters with a length of 50
+                        scale = TRUE) # must scale predictors when running svm model
+plot(linear.tune)
+
+# summary(linear.tune)
+linear.tune$best.parameters
+```
+
+The optimal value for the cost tuning parameter is 0.6514391.
+
+**Fit optimal support vector classifier (linear kernel) using the best cost parameter**
+
+```{r}
+svm_model_lin <- linear.tune$best.model
 
 # print the model summary
 summary(svm_model_lin)
@@ -77,10 +94,16 @@ summary(svm_model_lin)
 # predict the support vector classifier (linear kernel) on the training data
 train_pred_lin <- predict(svm_model_lin, newdata = auto_train)
 
+# confusion matrix
+confusionMatrix(data = train_pred_lin,
+                reference = auto_train$mpg_cat)
+
 # compute the training error rate
 train_error_rate_lin <- mean(train_pred_lin != auto_train$mpg_cat)
 train_error_rate_lin
 ```
+
+Error rate is calculated as the total number of two incorrect predictions (FN + FP) divided by the total number of a dataset (N). Therefore, the training error rate = (6 + 13) / 276 = 0.0688. This is also equivalent to 1 minus the accuracy = 1 - 0.9312 = **0.0688**
 
 ### Test error rate
 
@@ -88,15 +111,44 @@ train_error_rate_lin
 # predict the support vector classifier (linear kernel) on the test data
 test_pred_lin <- predict(svm_model_lin, newdata = auto_test)
 
+# confusion matrix
+confusionMatrix(data = test_pred_lin,
+                reference = auto_test$mpg_cat)
+
 # compute the test error rate
 test_error_rate_lin <- mean(test_pred_lin != auto_test$mpg_cat)
 test_error_rate_lin
 ```
 
+The test error rate = (5 + 9) / 116 = 0.1207. This is also equivalent to 1 minus the accuracy = 1 - 0.8793 = **0.1207**
+
 # (b) Fit a support vector machine with a radial kernel to the training data.
 
+**Non-Linear Boundary**
+
 ```{r}
-svm_model_rad <- svm(mpg_cat ~ ., data = auto_train, kernel = "radial")
+set.seed(1)
+
+# tuning parameter cost and gamma
+radial.tune <- tune.svm(mpg_cat ~ . ,
+                        data = auto_train,
+                        kernel = "radial",
+                        cost = exp(seq(1,7,len = 50)), # specify a grid of cost parameters with a length of 50
+                        gamma = exp(seq(-10,-2,len = 20))) # specify a grid of gamma parameters with a length of 20
+
+plot(radial.tune, transform.y = log, transform.x = log,
+     color.palette = terrain.colors)
+
+# summary(radial.tune)
+radial.tune$best.parameters
+```
+
+The optimal value for the cost tuning parameter is 197.4952 and the optimal value for the gamma tuning parameter is 0..03826736.
+
+**Fit optimal support vector classifier (radial kernel) using the best parameters**
+
+```{r}
+svm_model_rad <- radial.tune$best.model
 
 # print the model summary
 summary(svm_model_rad)
@@ -108,10 +160,16 @@ summary(svm_model_rad)
 # predict the support vector machine (radial kernel) on the training data
 train_pred_rad <- predict(svm_model_rad, newdata = auto_train)
 
+# confusion matrix
+confusionMatrix(data = train_pred_rad,
+                reference = auto_train$mpg_cat)
+
 # compute the training error rate
 train_error_rate_rad <- mean(train_pred_rad != auto_train$mpg_cat)
 train_error_rate_rad
 ```
+
+The training error rate = (3 + 5) / 276 = 0.029. This is also equivalent to 1 minus the accuracy = 1 - 0.971 = **0.029**
 
 ### Test error rate
 
@@ -119,10 +177,16 @@ train_error_rate_rad
 # predict the support vector machine (radial kernel) on the test data
 test_pred_rad <- predict(svm_model_rad, newdata = auto_test)
 
+# confusion matrix
+confusionMatrix(data = test_pred_rad,
+                reference = auto_test$mpg_cat)
+
 # compute the test error rate
 test_error_rate_rad <- mean(test_pred_rad != auto_test$mpg_cat)
 test_error_rate_rad
 ```
+
+The test error rate = (9 + 10) / 116 = 0.1638. This is also equivalent to 1 minus the accuracy = 1 - 0.8362 = **0.1638**
 
 # 2. Hierarchical clustering on the states using the USArrests dataset
 
